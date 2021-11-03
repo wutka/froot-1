@@ -1,5 +1,6 @@
 # Froot-1 - A Linux terminal Apple-1 Emulator
-This is an emulator for the Apple-1 computer.
+This is an emulator for the Apple-1 computer. It was written for Linux,
+but should also run on OSX, I have tested it on Mac OS Big Sur.
 
 The emulator runs from the command-line and generally works
 like the Apple-1, which had a simple text-based interface.
@@ -57,7 +58,7 @@ to reset and jump back to the monitor, then run the cassette interface
 and save the basic program as described in the manual. I then quit
 out of the program and start it again, using the cassette interface
 to load my program back, and then I go back into basic. When you
-load a basic program this way, may sure you start basic with E2B3R
+load a basic program this way, make sure you start basic with E2B3R
 instead of the usual E000R so it will keep the program that was
 loaded.
 ```
