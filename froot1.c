@@ -116,9 +116,9 @@ int main(int argc, char *argv[]) {
             }
             char *start = argv[i+1];
             for (;;) {
-                char *char_pos = strchr(argv[i+1], ',');
+                char *char_pos = strchr(start, ',');
                 if (!char_pos) {
-                    if (!load_mem(argv[i+1], true)) {
+                    if (!load_mem(start, true)) {
                         exit(1);
                     }
                     break;
@@ -138,9 +138,9 @@ int main(int argc, char *argv[]) {
             }
             char *start = argv[i+1];
             for (;;) {
-                char *char_pos = strchr(argv[i+1], ',');
+                char *char_pos = strchr(start, ',');
                 if (!char_pos) {
-                    if (!load_mem(argv[i+1], false)) {
+                    if (!load_mem(start, false)) {
                         exit(1);
                     }
                     break;
