@@ -15,6 +15,7 @@ bool breakpoint[65536];
 bool cassette_enabled = true;
 
 FILE *cassette_file;
+FILE *input_file;
 
 extern void reset6502();
 extern void exec6502(uint32_t);
@@ -40,7 +41,8 @@ uint16_t next_inst_addr(uint16_t);
 uint8_t read6502(uint16_t);
 void write6502(uint16_t, uint8_t);
 
-uint8_t char_pending;
+uint8_t char_pending = 0;
+uint8_t reading_file = 0;
 
 char input_line[512];
 
@@ -190,6 +192,16 @@ int main(int argc, char *argv[]) {
         // If a key has been hit, process it
         if (kbhit(false)) {
             handle_kb();
+        }
+        if (reading_file && !char_pending) {
+            char ch;
+            if (fread(&ch, 1, 1, input_file) < 1) {
+                fclose(input_file);
+                reading_file = 0;
+                printf("File loaded.\n");
+            } else {
+                char_pending = ch;
+            }
         }
     }
 }
@@ -497,7 +509,7 @@ void handle_kb() {
     } else if (ch == 4) {   // Ctrl-D
         debugging = true;
         printf("Debugging mode.\n");
-    } else if (char_pending) {
+    } else if (char_pending || reading_file) {
         // If the last character hasn't been processed, push this one back
         ungetc(ch, stdin);
     } else if (ch == 10) {
@@ -511,6 +523,22 @@ void handle_kb() {
     } else if (ch == 3) {           // Ctrl-C
         reset_term();
         exit(0);
+    } else if (ch == 12) {  // Ctrl-L
+        printf("Load from file: ");
+        reset_term();
+        fgets(input_line, sizeof(input_line)-1, stdin);
+        kbhit(true);
+        int len = strlen(input_line);
+        if ((len > 0) && (input_line[len-1] == '\n')) {
+            input_line[len-1] = 0;
+        }
+        len = strlen(input_line);
+        if (len > 0) {
+            input_file = fopen(input_line, "r");
+            if (input_file != NULL) {
+                reading_file = 1;
+            }
+        }
     } else if ((ch >= 'a') && (ch <= 'z')) {
         // Apple-1 only supported uppercase
         char_pending = ch - 'a' + 'A';

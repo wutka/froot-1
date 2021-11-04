@@ -7,8 +7,15 @@ like the Apple-1, which had a simple text-based interface.
 Since the Apple-1 didn't support lowercase letters, the emulator
 automatically converts lowercase keystrokes to upper-case.
 
-Use control-R to hit the Apple-1 reset button. Use control-C to
-exit the program.
+## Special Keys
+There are a few special keys recognized by the emulator:\
+Control-R  Reset button\
+Control-C  Exit the emulator\
+Control-L  Load a text file as input to the Apple-1\
+
+The Control-L option is useful if you have a Basic program as a
+text file and you want to load it. Copy&paste doesn't work very well
+with the single-character input.
 
 ## Command-line Options
 The original Apple-1 came with 4K of RAM and that is the default
