@@ -817,10 +817,10 @@ void debug_step() {
                     printf("  ");
                 }
                 printf("%02x ", ram[start_addr]);
-                if ((ram[start_addr] < 32) || (ram[start_addr]>127)) {
+                if (ram[start_addr] < 160) {
                     ascii_rep[bytes_printed] = '.';
                 } else {
-                    ascii_rep[bytes_printed] = ram[start_addr];
+                    ascii_rep[bytes_printed] = ram[start_addr]-0x80;
                 }
                 bytes_printed++;
                 ascii_rep[bytes_printed] = 0;
