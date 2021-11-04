@@ -133,7 +133,7 @@ The debugger prints the current pc, registers, and current instruction
 whenever it steps to another instruction or hits a breakpoint.
 
 The following commands are available within the debugger:\
-s or <return> - step to next instruction\
+s or \<return\> - step to next instruction\
 n - step over next instruction (useful to not follow subroutines)\
 c - continue running until a breakpoint is reached\
 b [addr]  - set breakpoint at address (addr defaults to pc)\
