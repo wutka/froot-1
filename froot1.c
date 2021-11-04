@@ -90,7 +90,7 @@ int main(int argc, char *argv[]) {
             printf("ROM and RAM files should be text files with lines in the format:\n");
             printf("aaaa: dd dd dd dd dd dd dd dd\n");
             printf("where aaaa is a hex address, and each dd is a hex byte.\n");
-            printf("The parser is currently limited to 8 bytes per row.\n");
+            printf("The parser is currently limited to 16 bytes per row.\n");
             printf("Since ROM files are loaded first, if a ROM and RAM file have overlapping addresses,\n");
             printf("the ROM wins and the memory is marked as read-only\n");
             printf("The emulator will automatically load the monitor.rom file.\n");
@@ -247,7 +247,7 @@ int load_mem(char *filename, bool read_only) {
         int addr = 0;
         int pos = 0;
         int len = strlen(line);
-        unsigned char row[8];
+        unsigned char row[16];
 
         int addr_len = 0;
         int byte_len = 0;
@@ -286,9 +286,9 @@ int load_mem(char *filename, bool read_only) {
                     addr = (addr << 4) + nybble;
                     addr_len++;
                 } else {
-                    // If we already have 8 bytes on this line and see another digit, that's an error
-                    if (byte_count == 8) {
-                        fprintf(stderr, "Got more than 8 bytes in %s at line %s\n", filename, line);
+                    // If we already have 16 bytes on this line and see another digit, that's an error
+                    if (byte_count == 16) {
+                        fprintf(stderr, "Got more than 16 bytes in %s at line %s\n", filename, line);
                         fclose(in);
                         return 0;
                     }
@@ -321,7 +321,7 @@ int load_mem(char *filename, bool read_only) {
         }
 
         // Write the row into ram and update the rom flag appropriately
-        for (int i=0; i < 8; i++) {
+        for (int i=0; i < byte_count; i++) {
             if (!rom[addr+i]) {
                 ram[addr+i] = row[i];
                 rom[addr+i] = read_only;
