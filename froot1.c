@@ -26,7 +26,7 @@ extern volatile uint32_t clockticks6502;
 
 int load_mem(char *filename, bool read_only);
 int kbhit(bool);
-int reset_term();
+void reset_term();
 long current_time_millis();
 void do_step();
 void check_pc();
@@ -125,9 +125,9 @@ int main(int argc, char *argv[]) {
             }
             char *start = argv[i+1];
             for (;;) {
-                char *char_pos = strchr(argv[i+1], ',');
+                char *char_pos = strchr(start, ',');
                 if (!char_pos) {
-                    if (!load_mem(argv[i+1], true)) {
+                    if (!load_mem(start, true)) {
                         exit(1);
                     }
                     break;
@@ -147,9 +147,9 @@ int main(int argc, char *argv[]) {
             }
             char *start = argv[i+1];
             for (;;) {
-                char *char_pos = strchr(argv[i+1], ',');
+                char *char_pos = strchr(start, ',');
                 if (!char_pos) {
-                    if (!load_mem(argv[i+1], false)) {
+                    if (!load_mem(start, false)) {
                         exit(1);
                     }
                     break;
@@ -231,7 +231,7 @@ int kbhit(bool init) {
     return nbbytes;
 }
 
-int reset_term() {
+void reset_term() {
     static const int STDIN = 0;
 
     // Use termios to turn on line buffering
@@ -451,7 +451,7 @@ void check_pc() {
                 pc = 0xc163; // Quit if no filename entered
             } else {
                 ram[0x28] = x; // save X in SAVEINDEX, since we skip WHEADER, we need to do this
-                char ch = cassette_read(a);
+                char ch = cassette_read();
                 if (ch < 0) {
                     status = status | 1; // Set carry
                     pc = 0xc189;
@@ -462,7 +462,7 @@ void check_pc() {
                 }
             }
         } else if (pc == 0xc1a4) {  // ACI - RDBYTE
-            int ch = cassette_read(a);
+            int ch = cassette_read();
             if (ch < 0) {
                 status = status | 1; // Set carry
                 pc = 0xc189;
