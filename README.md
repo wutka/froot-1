@@ -1,5 +1,6 @@
 # Froot-1 - A Linux terminal Apple-1 Emulator
-This is an emulator for the Apple-1 computer.
+This is an emulator for the Apple-1 computer. It was written for Linux,
+but should also run on OSX, I have tested it on Mac OS Big Sur.
 
 The emulator runs from the command-line and generally works
 like the Apple-1, which had a simple text-based interface.
@@ -16,13 +17,16 @@ where *nn* is the number of kilobytes of memory up to 64 to make
 the full memory range available (minus what is used by the monitor at
 FF00 and, the
 cassette interface, unless disabled, at C100-C300, and the D0xx
-addresses for communicating with the PIA chip).
+addresses for communicating with the PIA chip). You can also specify
+`full` for the memory size to get 64k.
 
 To disable the cassette interface, use `-cassette n`. 
 
 To load a ROM file, use `-rom file` or `-rom file1,file2,...,filen`.
 You can also load a file in ROM format into RAM instead of ROM with
 `-ram file` or `-ram file1,file2,...,filen`.
+
+To drop immediately into the debugger, use `-d`.
 
 ## Woz Monitor
 
@@ -57,7 +61,7 @@ to reset and jump back to the monitor, then run the cassette interface
 and save the basic program as described in the manual. I then quit
 out of the program and start it again, using the cassette interface
 to load my program back, and then I go back into basic. When you
-load a basic program this way, may sure you start basic with E2B3R
+load a basic program this way, make sure you start basic with E2B3R
 instead of the usual E000R so it will keep the program that was
 loaded.
 ```
@@ -119,6 +123,28 @@ read/write multiple ranges of memory, all those ranges will be
 read from/written to the same file. If you write multiple ranges,
 you need to make sure you read from those same ranges, or at least
 the same size.
+
+## Debugger
+The Froot-1 emulator includes a built-in debugger. To enter the
+debugger, either start the emulator with `-d` or hit control-D at
+any point to drop into the debugger.
+
+The debugger prints the current pc, registers, and current instruction
+whenever it steps to another instruction or hits a breakpoint.
+
+The following commands are available within the debugger:\
+s or \<return\> - step to next instruction\
+n - step over next instruction (useful to not follow subroutines)\
+c - continue running until a breakpoint is reached\
+b [addr]  - set breakpoint at address (addr defaults to pc)\
+cb [addr]  - set breakpoint at address (addr defaults to pc)\
+ca - clear all breakpoints\
+lb - list breakpoints\
+d start [end] - disassemble starting at start, with optional end addr\
+m start [end] - display memory starting at start, with optional end
+addr\
+end - stop debugging\
+h or help - a list of available debugger commands
 
 ## Implementation Details
 The bulk of the work of this program is performed by Mike Chambers'
