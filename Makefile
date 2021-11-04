@@ -11,6 +11,11 @@ bin2rom: bin2rom.o
 rom2bin: rom2bin.o
 	gcc ${CFLAGS} -o rom2bin rom2bin.o
 
+install:
+	cp froot1 bin2rom rom2bin /usr/local/bin
+	mkdir -p /usr/local/share/froot-1
+	cp monitor.rom wozbasic.rom wozaci.rom /usr/local/share/froot-1
+
 clean:
 	rm -f froot1 bin2rom rom2bin *.o
 

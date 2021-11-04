@@ -251,8 +251,11 @@ int load_mem(char *filename, bool read_only) {
 
     // Open the input file
     if ((in = fopen(filename, "r")) == NULL) {
-        fprintf(stderr, "Can't open file %s\n", filename);
-        return 0;
+        snprintf(line, sizeof(line)-1, "/usr/local/share/froot-1/%s", filename);
+        if ((in = fopen(line, "r")) == NULL) {
+            fprintf(stderr, "Can't open file %s\n", filename);
+            return 0;
+        }
     }
 
     // Read it line-by line
