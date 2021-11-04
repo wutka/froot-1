@@ -16,13 +16,16 @@ where *nn* is the number of kilobytes of memory up to 64 to make
 the full memory range available (minus what is used by the monitor at
 FF00 and, the
 cassette interface, unless disabled, at C100-C300, and the D0xx
-addresses for communicating with the PIA chip).
+addresses for communicating with the PIA chip). You can also specify
+`full` for the memory size to get 64k.
 
 To disable the cassette interface, use `-cassette n`. 
 
 To load a ROM file, use `-rom file` or `-rom file1,file2,...,filen`.
 You can also load a file in ROM format into RAM instead of ROM with
 `-ram file` or `-ram file1,file2,...,filen`.
+
+To drop immediately into the debugger, use `-d`.
 
 ## Woz Monitor
 
@@ -119,6 +122,28 @@ read/write multiple ranges of memory, all those ranges will be
 read from/written to the same file. If you write multiple ranges,
 you need to make sure you read from those same ranges, or at least
 the same size.
+
+## Debugger
+The Froot-1 emulator includes a built-in debugger. To enter the
+debugger, either start the emulator with `-d` or hit control-D at
+any point to drop into the debugger.
+
+The debugger prints the current pc, registers, and current instruction
+whenever it steps to another instruction or hits a breakpoint.
+
+The following commands are available within the debugger
+s or <return> - step to next instruction
+n - step over next instruction (useful to not follow subroutines)\
+c - continue running until a breakpoint is reached\
+b [addr]  - set breakpoint at address (addr defaults to pc)\
+cb [addr]  - set breakpoint at address (addr defaults to pc)\
+ca - clear all breakpoints\
+lb - list breakpoints\
+d start [end] - disassemble starting at start, with optional end addr\
+m start [end] - display memory starting at start, with optional end
+addr\
+end - stop debugging\
+h or help - a list of available debugger commands
 
 ## Implementation Details
 The bulk of the work of this program is performed by Mike Chambers'

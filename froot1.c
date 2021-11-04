@@ -11,6 +11,7 @@
 
 uint8_t ram[65536];
 bool rom[65536];
+bool breakpoint[65536];
 bool cassette_enabled = true;
 
 FILE *cassette_file;
@@ -32,6 +33,9 @@ void check_pc();
 void handle_kb();
 void show_display();
 void read_string(char *, int);
+void debug_step();
+void disassemble(uint16_t, uint16_t);
+uint16_t next_inst_addr(uint16_t);
 
 uint8_t read6502(uint16_t);
 void write6502(uint16_t, uint8_t);
@@ -42,11 +46,16 @@ char input_line[512];
 
 int max_ram = 4096;
 
+bool debugging = false;
+bool debug_run_to_breakpoint = false;
+uint16_t temp_breakpoint = 0;
+
 int main(int argc, char *argv[]) {
 
     for (int i=0; i < 65536; i++) {
         ram[i] = 0;
         rom[i] = false;
+        breakpoint[i] = false;
     }
 
     // Load the Woz monitor (at FF00)
@@ -153,6 +162,8 @@ int main(int argc, char *argv[]) {
                 char_pos++;
                 if (!*char_pos) break;
             }
+        } else if (!strcmp(argv[i], "-d")) {
+            debugging = true;
         }
     }
 
@@ -184,7 +195,11 @@ int main(int argc, char *argv[]) {
 }
 
 void do_step() {
-    step6502();
+    if (debugging) {
+        debug_step();
+    } else {
+        step6502();
+    }
 }
 
 void set_raw() {
@@ -479,6 +494,9 @@ void handle_kb() {
     if (ch == 18) {                 // Ctrl-R
         printf("RESET\n");
         reset6502();
+    } else if (ch == 4) {   // Ctrl-D
+        debugging = true;
+        printf("Debugging mode.\n");
     } else if (char_pending) {
         // If the last character hasn't been processed, push this one back
         ungetc(ch, stdin);
@@ -534,5 +552,401 @@ void write6502(uint16_t address, uint8_t value) {
         fflush(stdout);
     } else if (!rom[address]) { // only write if mem not marked as rom
         ram[address] = value;
+    }
+}
+
+int parse_addr_range(char *args, uint16_t *start, uint16_t *end, uint16_t default_size) {
+    *start = 0;
+    int start_len = 0;
+    *end = 0;
+    int end_len = 0;
+
+    bool invalid_char = false;
+    bool at_start = true;
+    while (*args) {
+        char ch = *args++;
+        if (((ch >= '0') && (ch <= '9')) ||
+            ((ch >= 'a') && (ch <= 'f')) ||
+            ((ch >= 'A') && (ch <= 'F'))) {
+            uint8_t nybble = 0;
+            if ((ch >= '0') && (ch <= '9')) {
+                nybble = ch - '0';
+            } else if ((ch >= 'a') && (ch <= 'f')) {
+                nybble = 10 + ch - 'a';
+            } else if ((ch >= 'A') && (ch <= 'F')) {
+                nybble = 10 + ch - 'A';
+            }
+            if (at_start) {
+                if (start_len >= 4) {
+                    printf("Too many digits in start address.\n");
+                    return 0;
+                }
+                *start = (*start << 4) + nybble;
+                start_len++;
+            } else {
+                if (end_len >= 4) {
+                    printf("Too many digits in end address.\n");
+                    return 0;
+                }
+                *end = (*end << 4) + nybble;
+                end_len++;
+            }
+        } else if ((ch == ' ') || (ch == '.') || (ch == ',') || (ch == '-')) {
+            if (at_start) {
+                at_start = false;
+            }
+            continue;
+        } else {
+            printf("Invalid character in disassembly range: %c\n", ch);
+            return 0;
+        }
+    }
+    if (at_start) {
+        *end = *start + default_size;
+    }
+    return 1;
+}
+
+void debug_step() {
+    char status_str[9];
+
+    if (!breakpoint[pc] && debug_run_to_breakpoint) {
+        step6502();
+        return;
+    }
+    debug_run_to_breakpoint = false;
+
+    status_str[8] = 0;
+    status_str[0] = status&0x80 ? 'N' : ' ';
+    status_str[1] = status&0x40 ? 'V' : ' ';
+    status_str[2] = ' ';
+    status_str[3] = status&0x10 ? 'B' : ' ';
+    status_str[4] = status&0x08 ? 'D' : ' ';
+    status_str[5] = status&0x04 ? 'I' : ' ';
+    status_str[6] = status&0x02 ? 'Z' : ' ';
+    status_str[7] = status&0x01 ? 'C' : ' ';
+
+    printf("pc = %04x  a=%02x  x=%02x  y=%02x  status=%s\n",
+            pc, a, x, y, status_str);
+    disassemble(pc, pc+1);
+
+    if (pc == temp_breakpoint) {
+        breakpoint[pc] = false;
+        temp_breakpoint = 0;
+    }
+
+    reset_term();
+    for (;;) {
+        printf("Debug>");
+        fgets(input_line, sizeof(input_line)-1, stdin);
+        int len = strlen(input_line);
+        while ((len > 0) && ((input_line[len-1] == '\n') || (input_line[len-1] == '\r'))) {
+            input_line[len-1] = 0;
+        }
+        len = strlen(input_line);
+
+        if (len == 0) {
+            // Allow just hitting enter to work like "s"
+            kbhit(true);
+            step6502();
+            return;
+        }
+
+        char *spacepos = strchr(input_line, ' ');
+        char *args = NULL;
+        if (spacepos) {
+            *spacepos++ = 0;
+            while (*spacepos == ' ') spacepos++;
+            args = spacepos;
+        }
+
+        if (!strcmp(input_line, "s")) {
+            kbhit(true);
+            step6502();
+            return;
+        } else if (!strcmp(input_line, "n")) {
+            if (temp_breakpoint != 0) {
+                breakpoint[temp_breakpoint] = false;
+                printf("Clearing temp breakpoint at %04x\n", temp_breakpoint);
+            }
+            temp_breakpoint = next_inst_addr(pc);
+            breakpoint[temp_breakpoint] = true;
+            kbhit(true);
+            debug_run_to_breakpoint = true;
+            step6502();
+            return;
+        } else if (!strcmp(input_line, "c")) {
+            kbhit(true);
+            debug_run_to_breakpoint = true;
+            step6502();
+            return;
+        } else if (!strcmp(input_line, "b")) {
+            if (args == NULL) {
+                breakpoint[pc] = true;
+                printf("Set breakpoint at %04x\n", pc);
+            } else {
+                unsigned int bp_addr;
+                if (sscanf(args, "%x", &bp_addr) == 1) {
+                    if (bp_addr >= 0x10000) {
+                        printf("Breakpoint %0x out of range.\n", bp_addr);
+                    } else {
+                        breakpoint[bp_addr] = true;
+                        printf("Set breakpoint at %04x\n", bp_addr);
+                    }
+                } else {
+                    printf("Can't parse breakpoint addr %s\n", args);
+                }
+            }
+        } else if (!strcmp(input_line, "lb")) {
+            bool found_breakpoint = false;
+            for (int i=0; i < 65536; i++) {
+                if (breakpoint[i]) {
+                    printf("%04x\n", i);
+                    found_breakpoint = true;
+                }
+            }
+            if (!found_breakpoint) {
+                printf("No breakpoints.\n");
+            }
+        } else if (!strcmp(input_line, "cb")) {
+            if (args == NULL) {
+                if (!breakpoint[pc]) {
+                    printf("No current breakpoint at %04x\n", pc);
+                } else {
+                    breakpoint[pc] = false;
+                    printf("Breakpoint cleared at %04x\n", pc);
+                }
+            } else {
+                unsigned int bp_addr;
+                if (sscanf(args, "%x", &bp_addr) == 1) {
+                    if (bp_addr > 0x10000) {
+                        printf("Breakpoint %0x out of range.\n", bp_addr);
+                    } else {
+                        breakpoint[bp_addr] = false;
+                        printf("Cleared breakpoint at %04x\n", bp_addr);
+                    }
+                } else {
+                    printf("Can't parse breakpoint addr %s\n", args);
+                }
+            }
+        } else if (!strcmp(input_line, "ca")) {
+            int count = 0;
+            for (int i=0; i < 65536; i++) {
+                if (breakpoint[i]) {
+                    count++;
+                    breakpoint[i] = false;
+                }
+            }
+            if (count == 0) {
+                printf("No breakpoints to clear.\n");
+            } else {
+                printf("Cleared %d breakpoints.\n", count);
+            }
+        } else if (!strcmp(input_line, "d")) {
+            uint16_t start_addr = 0;
+            uint16_t end_addr = 0;
+            if (args != NULL) {
+                if (!parse_addr_range(args, &start_addr, &end_addr, 20)) {
+                    continue;
+                }
+            } else {
+                start_addr = pc;
+                end_addr = pc + 20;
+            }
+            disassemble(start_addr, end_addr);
+        } else if (!strcmp(input_line, "m")) {
+            if (args == NULL) {
+                printf("m command requires at least a starting address\n");
+                continue;
+            }
+            uint16_t start_addr = 0;
+            uint16_t end_addr = 0;
+            if (!parse_addr_range(args, &start_addr, &end_addr, 64)) {
+                continue;
+            }
+            int bytes_printed = 0;
+            char ascii_rep[17];
+            if (start_addr & 0xf != 0) {
+                printf("%04x: ", start_addr & 0xfff0);
+                for (int i=0; i < (start_addr & 0xf); i++) {
+                    if (i == 8) {
+                        printf("  ");
+                    }
+                    printf("   ");
+                    ascii_rep[i] = ' ';
+                }
+                bytes_printed = start_addr & 0xf;
+            }
+
+            while (start_addr < end_addr) {
+                if (bytes_printed == 0) {
+                    printf("%04x: ", start_addr);
+                }
+                if (bytes_printed == 8) {
+                    printf("  ");
+                }
+                printf("%02x ", ram[start_addr]);
+                if ((ram[start_addr] < 32) || (ram[start_addr]>127)) {
+                    ascii_rep[bytes_printed] = '.';
+                } else {
+                    ascii_rep[bytes_printed] = ram[start_addr];
+                }
+                bytes_printed++;
+                ascii_rep[bytes_printed] = 0;
+                if (bytes_printed >= 16) {
+                    printf("  %s\n", ascii_rep);
+                    bytes_printed = 0;
+                }
+                start_addr++;
+            }
+
+            if (bytes_printed > 0) {
+                while (bytes_printed < 16) {
+                    if (bytes_printed == 8) {
+                        printf("  ");
+                    }
+                    printf("   ");
+                    bytes_printed++;
+                }
+                printf("  %s\n", ascii_rep);
+            }
+        } else if (!strcmp(input_line, "end")) {
+            printf("End debugging mode.\n");
+            debugging = false;
+            kbhit(true);
+            step6502();
+            return;
+        } else if (!strcmp(input_line, "h") || !strcmp(input_line, "help")) {
+            printf("Debugging commands:\n");
+            printf("s or <return> - step to next instruction\n");
+            printf("n - step over next instruction (useful to not follow subroutines)\n");
+            printf("c - continue running until a breakpoint is reached\n");
+            printf("b [addr]  - set breakpoint at address (addr defaults to pc)\n");
+            printf("cb [addr]  - set breakpoint at address (addr defaults to pc)\n");
+            printf("ca - clear all breakpoints\n");
+            printf("lb - list breakpoints\n");
+            printf("d start [end] - disassemble starting at start, with optional end addr\n");
+            printf("m start [end] - display memory starting at start, with optional end addr\n");
+            printf("end - stop debugging\n");
+            printf("h or help - this listing\n");
+            continue;
+        }
+    }
+}
+
+enum addressing_modes {
+    IMM, ABS, ABS_X, ABS_Y, ZP, ZP_X, IND, IND_X, IND_Y, REL, ACC, NONE
+};
+
+struct instruction {
+    char *opcode;
+    uint16_t addr_mode;
+};
+
+const struct instruction ILLEGAL = { "???", NONE };
+
+struct instruction instruction_desc[] = {
+/* 0 */    { "brk", NONE }, {"ora", IND_X}, ILLEGAL, ILLEGAL, ILLEGAL, {"ora", ZP}, {"asl", ZP}, ILLEGAL, {"php", NONE}, {"ora", IMM}, {"asl", ACC}, ILLEGAL, ILLEGAL, {"ora", ABS}, {"asl", ABS}, ILLEGAL,
+/* 1 */    { "bpl", REL}, {"ora", IND_Y}, ILLEGAL, ILLEGAL, ILLEGAL, {"ora", ZP_X}, {"asl", ZP_X}, ILLEGAL, {"clc", NONE}, {"ora", ABS_Y}, ILLEGAL, ILLEGAL, ILLEGAL, {"ora", ABS_X}, {"asl", ABS_X}, ILLEGAL,
+/* 2 */    { "jsr", ABS}, {"and", IND_X}, ILLEGAL, ILLEGAL, {"bit", ZP}, {"and", ZP}, {"rol", ZP}, ILLEGAL, {"plp", NONE}, {"and", IMM}, {"rol", ACC}, ILLEGAL, {"bit", ABS}, {"and", ABS}, {"rol", ABS}, ILLEGAL,
+/* 3 */    { "bmi", REL}, {"and", IND_Y}, ILLEGAL, ILLEGAL, ILLEGAL, {"and", ZP_X}, {"rol", ZP_X}, ILLEGAL, {"sec", NONE}, {"and",ABS_Y}, ILLEGAL, ILLEGAL, ILLEGAL, {"and", ABS_X}, {"rol", ABS_X}, ILLEGAL,
+/* 4 */    { "rti", NONE}, {"eor", IND_X}, ILLEGAL, ILLEGAL, ILLEGAL, {"eor", ZP}, {"lsr", ZP}, ILLEGAL, {"pha", NONE}, {"eor", IMM}, {"lsr", ACC}, ILLEGAL, {"jmp", ABS}, {"eor", ABS}, {"lsr", ABS}, ILLEGAL,
+/* 5 */    { "bvc", REL}, {"eor", IND_Y}, ILLEGAL, ILLEGAL, ILLEGAL, {"eor", ZP_X}, {"lsr", ZP_X}, ILLEGAL, {"cli", NONE}, {"eor", ABS_Y}, ILLEGAL, ILLEGAL, ILLEGAL, {"eor", ABS_X}, {"lsr", ABS_X}, ILLEGAL,
+/* 6 */    {"rts", NONE}, {"adc", IND_X}, ILLEGAL, ILLEGAL, ILLEGAL, {"adc", ZP}, {"ror", ZP}, ILLEGAL, {"pla", NONE}, {"adc", IMM}, {"ror", ACC}, ILLEGAL, {"jmp",IND}, {"adc", ABS}, {"ror", ABS}, ILLEGAL,
+/* 7 */    {"bvs", REL}, {"adc",IND_Y}, ILLEGAL, ILLEGAL, ILLEGAL, {"adc",ZP_X}, {"ror", ZP_X}, ILLEGAL, {"sei", NONE}, {"adc", ABS_Y},ILLEGAL, ILLEGAL, ILLEGAL, {"adc",ABS_X}, {"ror",ABS_X}, ILLEGAL,
+/* 8 */     ILLEGAL, {"sta",IND_X}, ILLEGAL, ILLEGAL, {"sty",ZP}, {"sta",ZP}, {"stx",ZP}, ILLEGAL, {"dey",NONE}, ILLEGAL,{"txa", NONE}, ILLEGAL, {"sty",ABS},{"sta",ABS},{"stx",ABS}, ILLEGAL,
+/* 9 */     {"bcc", REL}, {"sta", IND_Y}, ILLEGAL, ILLEGAL, {"sty",ZP_X}, {"sta",ZP_X}, {"stx",ZP_X}, ILLEGAL, {"tya", NONE}, {"sta",ABS_Y}, {"txs",NONE},  ILLEGAL, ILLEGAL, {"sta",ABS_X}, ILLEGAL, ILLEGAL,
+/* a */     {"ldy",IMM}, {"lda",IND_X},{"ldx",IMM}, ILLEGAL,{"ldy",ZP},{"lda",ZP},{"ldx",ZP}, ILLEGAL, {"tay", NONE}, {"lda", IMM}, {"tax", NONE},  ILLEGAL, {"ldy",ABS}, {"lda",ABS}, {"ldx",ABS},  ILLEGAL,
+/* b */     {"bcs",REL},{"lda",IND_Y}, ILLEGAL, ILLEGAL,{"ldy",ZP_X},{"lda",ZP_X},{"ldx",ZP_X}, ILLEGAL,{"clv",NONE},{"lda",ABS_Y},{"tsx",NONE}, ILLEGAL,{"ldy",ABS_X},{"lda",ABS_X},{"ldy",ABS_Y}, ILLEGAL,
+/* c */     {"cpy",IMM},{"cmp",IND_X}, ILLEGAL, ILLEGAL,{"cpy",ZP},{"cmp",ZP},{"dec",ZP}, ILLEGAL, {"iny",NONE},{"cmp",IMM},{"dex",NONE}, ILLEGAL,{"cpy",ABS},{"cmp",ABS},{"dec",ABS},ILLEGAL,
+/* d */     {"bne",REL},{"cmp",IND_Y},ILLEGAL, ILLEGAL, ILLEGAL,{"cmp",ZP_X},{"dec",ZP_X}, ILLEGAL,{"cld",NONE},{"cmp",ABS_Y},ILLEGAL, ILLEGAL, ILLEGAL, {"cmp",ABS_X},{"dec",ABS_X}, ILLEGAL,
+/* e */     {"cpx",IMM},{"sbc",IND_X}, ILLEGAL, ILLEGAL,{"cpx",ZP},{"sbc",ZP},{"inc",ZP}, ILLEGAL,{"inx",NONE},{"sbc",IMM},{"nop",NONE}, ILLEGAL,{"cpx",ABS},{"sbc",ABS},{"inc",ABS}, ILLEGAL,
+/* f */     {"beq",REL},{"sbc",IND_Y},ILLEGAL, ILLEGAL, ILLEGAL,{"sbc",ZP_X},{"inc",ZP_X}, ILLEGAL,{"sed",NONE},{"sbc",ABS_Y},ILLEGAL, ILLEGAL, ILLEGAL,{"sbc",ABS_X},{"inc",ABS_X}, ILLEGAL
+};
+
+uint16_t instruction_size(uint8_t addr_mode) {
+    switch (addr_mode) {
+        case ABS:
+        case ABS_X:
+        case ABS_Y:
+            return 3;
+        case ZP:
+        case ZP_X:
+        case IND:
+        case IND_X:
+        case IND_Y:
+        case IMM:
+        case REL:
+            return 2;
+        case NONE:
+        case ACC:
+            return 1;
+    }
+}
+
+uint16_t next_inst_addr(uint16_t loc) {
+    uint8_t opcode = ram[loc];
+    struct instruction inst = instruction_desc[opcode];
+    uint8_t addr_mode = inst.addr_mode;
+    return loc + instruction_size(addr_mode);
+}
+
+void disassemble(uint16_t from, uint16_t to) {
+    while (from < to) {
+        uint8_t opcode = ram[from];
+        struct instruction inst = instruction_desc[opcode];
+        uint8_t addr_mode = inst.addr_mode;
+        uint8_t inst_size = instruction_size(addr_mode);
+
+        printf("%04x: ", from);
+        for (int i=0; i <= 2; i++) {
+            if (i >= inst_size) {
+                printf("   ");
+            } else {
+                printf("%02x ", ram[from+i]);
+            }
+        }
+        printf(" %3.3s", inst.opcode);
+
+        switch (addr_mode) {
+            case ABS:
+                printf(" %04x\n", ram[from+1]+(ram[from+2]<<8));
+                break;
+            case ABS_X:
+                printf(" %04x,X\n", ram[from+1]+(ram[from+2]<<8));
+                break;
+            case ABS_Y:
+                printf(" %04x,Y\n", ram[from+1]+(ram[from+2]<<8));
+                break;
+            case ZP:
+                printf(" %02x\n", ram[from+1]);
+                break;
+            case ZP_X:
+                printf(" %02x,X\n", ram[from+1]);
+                break;
+            case IND:
+                printf(" (%02x)\n", ram[from+1]);
+                break;
+            case IND_X:
+                printf(" (%02x,X)\n", ram[from+1]);
+                break;
+            case IND_Y:
+                printf(" (%02x),Y\n", ram[from+1]);
+                break;
+            case IMM:
+                printf(" #%02x\n", ram[from+1]);
+                break;
+            case REL:
+                printf(" %04x\n", from+2+(char)ram[from+1]);
+                break;
+            case NONE:
+                printf("\n");
+                break;
+            case ACC:
+                printf(" A\n");
+                break;
+        }
+
+        from += inst_size;
     }
 }
