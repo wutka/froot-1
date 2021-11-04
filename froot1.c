@@ -200,6 +200,9 @@ int main(int argc, char *argv[]) {
                 reading_file = 0;
                 printf("File loaded.\n");
             } else {
+                if (ch == 0x0a) {
+                    ch = 0x0d;
+                }
                 char_pending = ch;
             }
         }
