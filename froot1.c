@@ -49,10 +49,9 @@ char input_line[512];
 int max_ram = 4096;
 
 int baud = 0;
-long baud_clock_ticks;
+clock_t baud_clock_ticks;
 clock_t next_char_time;
 bool send_ready;
-
 
 bool debugging = false;
 bool debug_run_to_breakpoint = false;
@@ -203,10 +202,9 @@ int main(int argc, char *argv[]) {
     // Reset the CPU
     reset6502();
 
-    int next_char_time = 0;
     send_ready = true;
     if (baud > 0) {
-        baud_clock_ticks = 8000000l / (long) baud;
+        baud_clock_ticks = 8l * CLOCKS_PER_SEC / (long) baud;
     }
 
     for (;;) {
@@ -215,6 +213,7 @@ int main(int argc, char *argv[]) {
             clock_t curr_clock = clock();
             if (curr_clock >= next_char_time) {
                 send_ready = true;
+                printf("Send ready\n");
             }
         }
 
@@ -577,6 +576,8 @@ void handle_kb() {
             input_file = fopen(input_line, "r");
             if (input_file != NULL) {
                 reading_file = 1;
+            } else {
+                printf("Unable to open file %s\n", input_line);
             }
         }
     } else if ((ch >= 'a') && (ch <= 'z')) {
@@ -601,9 +602,11 @@ uint8_t read6502(uint16_t address) {
         char_pending = 0;
         return 0x80 | ch;
     } else if (address == 0xd013) {
-        if (send_ready) {
+        if (send_ready || reading_file) {
+            printf("Ready\n");
             return 0x80; // Allow baud rate regulation
         } else {
+            printf("Not ready\n");
             return 0;
         }
     } else {
@@ -615,7 +618,8 @@ uint8_t read6502(uint16_t address) {
 /* Callback from the fake6502 library, handle writes to RAM or the RIOT chips */
 void write6502(uint16_t address, uint8_t value) {
     if ((address & 0xff1f) == 0xd012) {
-        if (send_ready) {
+        printf("Sending\n");
+        if (reading_file || send_ready) {
             char ch = value & 0x7f;
             if (ch == 13) {
                 putchar(10);
@@ -624,8 +628,9 @@ void write6502(uint16_t address, uint8_t value) {
             }
             fflush(stdout);
 
-            if (baud > 0) {
+            if (!reading_file && (baud > 0)) {
                 next_char_time = clock() + baud_clock_ticks;
+                printf("Setting not ready\n");
                 send_ready = false;
             }
         }
