@@ -42,7 +42,7 @@ uint8_t read6502(uint16_t);
 void write6502(uint16_t, uint8_t);
 
 uint8_t char_pending = 0;
-bool reading_file = false;
+uint8_t reading_file = 0;
 
 char input_line[512];
 
@@ -227,14 +227,16 @@ int main(int argc, char *argv[]) {
         if (kbhit(false)) {
             handle_kb();
         }
-
         if (reading_file && !char_pending) {
             char ch;
             if (fread(&ch, 1, 1, input_file) < 1) {
                 fclose(input_file);
-                reading_file = false;
+                reading_file = 0;
                 printf("File loaded.\n");
             } else {
+                if (ch == 0x0a) {
+                    ch = 0x0d;
+                }
                 char_pending = ch;
             }
         }
@@ -863,10 +865,10 @@ void debug_step() {
                     printf("  ");
                 }
                 printf("%02x ", ram[start_addr]);
-                if ((ram[start_addr] < 32) || (ram[start_addr]>127)) {
+                if (ram[start_addr] < 160) {
                     ascii_rep[bytes_printed] = '.';
                 } else {
-                    ascii_rep[bytes_printed] = ram[start_addr];
+                    ascii_rep[bytes_printed] = ram[start_addr]-0x80;
                 }
                 bytes_printed++;
                 ascii_rep[bytes_printed] = 0;
