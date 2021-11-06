@@ -35,6 +35,8 @@ You can also load a file in ROM format into RAM instead of ROM with
 
 To drop immediately into the debugger, use `-d`.
 
+You can simulate a baud rate with `-baud nnn`. A baud rate of 0
+means that there is no baud rate limitation, which is the default.
 ## Woz Monitor
 
 The original Woz monitor program is loaded starting at location FF00

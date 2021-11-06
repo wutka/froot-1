@@ -213,7 +213,6 @@ int main(int argc, char *argv[]) {
             clock_t curr_clock = clock();
             if (curr_clock >= next_char_time) {
                 send_ready = true;
-                printf("Send ready\n");
             }
         }
 
@@ -601,13 +600,11 @@ uint8_t read6502(uint16_t address) {
         uint8_t ch = char_pending;
         char_pending = 0;
         return 0x80 | ch;
-    } else if (address == 0xd013) {
+    } else if (((address & 0xff1f) == 0xd012) || ((address & 0xff1f) == 0xd013)) {
         if (send_ready || reading_file) {
-            printf("Ready\n");
-            return 0x80; // Allow baud rate regulation
+            return 0x00; // Allow baud rate regulation
         } else {
-            printf("Not ready\n");
-            return 0;
+            return 0x80;
         }
     } else {
 //        printf("Returning %02x\n", ram[address]);
@@ -618,7 +615,6 @@ uint8_t read6502(uint16_t address) {
 /* Callback from the fake6502 library, handle writes to RAM or the RIOT chips */
 void write6502(uint16_t address, uint8_t value) {
     if ((address & 0xff1f) == 0xd012) {
-        printf("Sending\n");
         if (reading_file || send_ready) {
             char ch = value & 0x7f;
             if (ch == 13) {
@@ -630,7 +626,6 @@ void write6502(uint16_t address, uint8_t value) {
 
             if (!reading_file && (baud > 0)) {
                 next_char_time = clock() + baud_clock_ticks;
-                printf("Setting not ready\n");
                 send_ready = false;
             }
         }
