@@ -15,6 +15,7 @@ bool breakpoint[65536];
 bool cassette_enabled = true;
 
 FILE *cassette_file;
+FILE *input_file;
 
 extern void reset6502();
 extern void exec6502(uint32_t);
@@ -40,11 +41,18 @@ uint16_t next_inst_addr(uint16_t);
 uint8_t read6502(uint16_t);
 void write6502(uint16_t, uint8_t);
 
-uint8_t char_pending;
+uint8_t char_pending = 0;
+bool reading_file = false;
 
 char input_line[512];
 
 int max_ram = 4096;
+
+int baud = 0;
+long baud_clock_ticks;
+clock_t next_char_time;
+bool send_ready;
+
 
 bool debugging = false;
 bool debug_run_to_breakpoint = false;
@@ -118,6 +126,7 @@ int main(int argc, char *argv[]) {
                 printf("Must specify y or n for cassette\n");
                 exit(1);
             }
+            i++;
         } else if (!strcmp(argv[i], "-rom")) {
             if (i >= argc-1) {
                 printf("Must specify at least one filename after -rom\n");
@@ -140,6 +149,7 @@ int main(int argc, char *argv[]) {
                 char_pos++;
                 if (!*char_pos) break;
             }
+            i++;
         } else if (!strcmp(argv[i], "-ram")) {
             if (i >= argc-1) {
                 printf("Must specify at least one filename after -ram\n");
@@ -162,8 +172,22 @@ int main(int argc, char *argv[]) {
                 char_pos++;
                 if (!*char_pos) break;
             }
+            i++;
         } else if (!strcmp(argv[i], "-d")) {
             debugging = true;
+        } else if (!strcmp(argv[i], "-baud")) {
+            if (i >= argc-1) {
+                printf("Must specify a baud rate after -baud\n");
+                exit(1);
+            }
+            if (sscanf(argv[i+1], "%d", &baud) == 0) {
+                printf("Unable to parse baud rate %s\n",argv[i+1]);
+                exit(1);
+            }
+            if (baud < 0) {
+                printf("Baud rate cannot be negative\n");
+                exit(1);
+            }
         }
     }
 
@@ -179,8 +203,20 @@ int main(int argc, char *argv[]) {
     // Reset the CPU
     reset6502();
 
+    int next_char_time = 0;
+    send_ready = true;
+    if (baud > 0) {
+        baud_clock_ticks = 8000000l / (long) baud;
+    }
+
     for (;;) {
 
+        if (!send_ready) {
+            clock_t curr_clock = clock();
+            if (curr_clock >= next_char_time) {
+                send_ready = true;
+            }
+        }
 
         do_step();
 
@@ -190,6 +226,17 @@ int main(int argc, char *argv[]) {
         // If a key has been hit, process it
         if (kbhit(false)) {
             handle_kb();
+        }
+
+        if (reading_file && !char_pending) {
+            char ch;
+            if (fread(&ch, 1, 1, input_file) < 1) {
+                fclose(input_file);
+                reading_file = false;
+                printf("File loaded.\n");
+            } else {
+                char_pending = ch;
+            }
         }
     }
 }
@@ -500,7 +547,10 @@ void handle_kb() {
     } else if (ch == 4) {   // Ctrl-D
         debugging = true;
         printf("Debugging mode.\n");
-    } else if (char_pending) {
+    } else if (ch == 3) {           // Ctrl-C
+        reset_term();
+        exit(0);
+    } else if (char_pending || reading_file) {
         // If the last character hasn't been processed, push this one back
         ungetc(ch, stdin);
     } else if (ch == 10) {
@@ -511,9 +561,22 @@ void handle_kb() {
         // the Apple-1 uses for delete. I patched monitor.rom so that 8 is a backspace
         // instead of 3F
         char_pending = 8;
-    } else if (ch == 3) {           // Ctrl-C
+    } else if (ch == 12) {  // Ctrl-L
+        printf("Load from file: ");
         reset_term();
-        exit(0);
+        fgets(input_line, sizeof(input_line)-1, stdin);
+        kbhit(true);
+        int len = strlen(input_line);
+        if ((len > 0) && (input_line[len-1] == '\n')) {
+            input_line[len-1] = 0;
+        }
+        len = strlen(input_line);
+        if (len > 0) {
+            input_file = fopen(input_line, "r");
+            if (input_file != NULL) {
+                reading_file = 1;
+            }
+        }
     } else if ((ch >= 'a') && (ch <= 'z')) {
         // Apple-1 only supported uppercase
         char_pending = ch - 'a' + 'A';
@@ -536,7 +599,11 @@ uint8_t read6502(uint16_t address) {
         char_pending = 0;
         return 0x80 | ch;
     } else if (address == 0xd013) {
-        return 0x80; // Always ready to write to display
+        if (send_ready) {
+            return 0x80; // Allow baud rate regulation
+        } else {
+            return 0;
+        }
     } else {
 //        printf("Returning %02x\n", ram[address]);
         return ram[address];
@@ -546,13 +613,20 @@ uint8_t read6502(uint16_t address) {
 /* Callback from the fake6502 library, handle writes to RAM or the RIOT chips */
 void write6502(uint16_t address, uint8_t value) {
     if ((address & 0xff1f) == 0xd012) {
-        char ch = value & 0x7f;
-        if (ch == 13) {
-            putchar(10);
-        } else {
-            putchar(ch);
+        if (send_ready) {
+            char ch = value & 0x7f;
+            if (ch == 13) {
+                putchar(10);
+            } else {
+                putchar(ch);
+            }
+            fflush(stdout);
+
+            if (baud > 0) {
+                next_char_time = clock() + baud_clock_ticks;
+                send_ready = false;
+            }
         }
-        fflush(stdout);
     } else if (!rom[address]) { // only write if mem not marked as rom
         ram[address] = value;
     }
