@@ -204,7 +204,7 @@ int main(int argc, char *argv[]) {
 
     send_ready = true;
     if (baud > 0) {
-        baud_clock_ticks = 8l * CLOCKS_PER_SEC / (long) baud;
+        baud_clock_ticks = 9l * CLOCKS_PER_SEC / (long) baud;
     }
 
     for (;;) {
