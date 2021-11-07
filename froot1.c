@@ -27,7 +27,6 @@ extern volatile uint32_t clockticks6502;
 
 int load_mem(char *filename, bool read_only);
 int load_syms(char *filename);
-void make_sym_table();
 int kbhit(bool);
 void reset_term();
 long current_time_millis();
@@ -39,6 +38,7 @@ void read_string(char *, int);
 void debug_step();
 void disassemble(uint16_t, uint16_t);
 uint16_t next_inst_addr(uint16_t);
+int find_symbol(char *, uint16_t *);
 
 uint8_t read6502(uint16_t);
 void write6502(uint16_t, uint8_t);
@@ -59,20 +59,14 @@ bool debugging = false;
 bool debug_run_to_breakpoint = false;
 uint16_t temp_breakpoint = 0;
 
-struct sym {
+struct sym_node {
     char *name;
     uint16_t value;
+    struct sym_node *left;
+    struct sym_node *right;
 };
 
-struct sym_node {
-    struct sym *sym;
-    struct sym_node *next;
-};
-
-struct sym_node *sym_list_head = NULL;
-
-int sym_table_size = 0;
-struct sym **sym_table = NULL;
+struct sym_node *sym_tree = NULL;
 
 int main(int argc, char *argv[]) {
 
@@ -228,11 +222,6 @@ int main(int argc, char *argv[]) {
                 exit(1);
             }
         }
-    }
-
-    if (sym_table_size > 0) {
-        make_sym_table();
-        printf("Symbol table has %d entries\n", sym_table_size);
     }
 
     if (cassette_enabled) {
@@ -477,32 +466,37 @@ int load_syms(char *filename) {
 
         int val;
         if (sscanf(val_str, "%x", &val) == 0) continue;
-        struct sym *new_sym = (struct sym *) malloc(sizeof(struct sym));
-        new_sym->name = malloc(strlen(name)+1);
-        strcpy(new_sym->name, name);
-        new_sym->value = val;
-
-        struct sym_node *curr = sym_list_head;
-        struct sym_node *prev = NULL;
 
         struct sym_node *new_node = (struct sym_node *) malloc(sizeof(struct sym_node));
-        new_node->sym = new_sym;
-        new_node->next = NULL;
+        new_node->name = malloc(strlen(name)+1);
+        strcpy(new_node->name, name);
+        new_node->value = val;
+        new_node->left = NULL;
+        new_node->right = NULL;
 
-        sym_table_size++;
-
-        if (!curr) {
-            curr =new_node;
+        if (sym_tree == NULL) {
+            sym_tree = new_node;
         } else {
-            while (curr && (strcmp(name, curr->sym->name) > 0)) {
-                prev = curr;
-                curr = curr->next;
-            }
-            new_node->next = curr;
-            if (prev == NULL) {
-                sym_list_head = new_node;
-            } else {
-                prev->next = new_node;
+            struct sym_node *curr = sym_tree;
+            while (curr != NULL ) {
+                int res = strcmp(name, curr->name);
+                if (res == 0) {
+                    break;
+                } else if (res < 0) {
+                    if (curr->left == NULL) {
+                        curr->left = new_node;
+                        break;
+                    } else {
+                        curr = curr->left;
+                    }
+                } else {
+                    if (curr->right == NULL) {
+                        curr->right = new_node;
+                        break;
+                    } else {
+                        curr = curr->right;
+                    }
+                }
             }
         }
     }
@@ -510,31 +504,19 @@ int load_syms(char *filename) {
     return 1;
 }
 
-void make_sym_table() {
-    sym_table = (struct sym **)malloc(sym_table_size * sizeof(struct sym *));
-    int pos = 0;
-    struct sym_node *curr = sym_list_head;
-    while (curr) {
-        sym_table[pos] = curr->sym;
-        pos++;
-        curr = curr->next;
-    }
-}
-
 int find_symbol(char *symbol, uint16_t *value) {
-    int first, last, mid;
-    first = 0;
-    last = sym_table_size;
-    while (first <= last) {
-        mid = (first + last) / 2;
-        int res = strcmp(symbol, sym_table[mid]->name);
+    struct sym_node *curr;
+
+    curr = sym_tree;
+    while (curr != NULL) {
+        int res = strcmp(symbol, curr->name);
         if (res == 0) {
-            *value = sym_table[mid]->value;
+            *value = curr->value;
             return 1;
         } else if (res < 0) {
-            last = mid;
+            curr = curr->left;
         } else {
-            first = mid;
+            curr = curr->right;
         }
     }
     return 0;
@@ -786,6 +768,7 @@ int parse_addr_range(char *args, uint16_t *start, uint16_t *end, uint16_t defaul
 
     bool invalid_char = false;
     bool at_start = true;
+    int add_to_start = false;
     while (*args) {
         char ch = *args++;
         if (((ch >= '0') && (ch <= '9')) ||
@@ -814,11 +797,53 @@ int parse_addr_range(char *args, uint16_t *start, uint16_t *end, uint16_t defaul
                 *end = (*end << 4) + nybble;
                 end_len++;
             }
-        } else if ((ch == ' ') || (ch == '.') || (ch == ',') || (ch == '-')) {
+        } else if ((ch == ' ') || (ch == '.') || (ch == ',') || (ch == '-') || (ch == '+')) {
             if (at_start) {
                 at_start = false;
             }
-            continue;
+            if (ch == '+') {
+                add_to_start = true;
+            }
+        } else if (ch == '@') {
+            char *sym = args;
+            bool found = false;
+            while (*args) {
+                char ch = *args;
+                if ((ch == ' ') || (ch == '.') || (ch == ',') || (ch == '-') || (ch == '+')) {
+                    *args = 0;
+                    uint16_t value;
+                    if (find_symbol(sym, &value)) {
+                        if (at_start) {
+                            *start = value;
+                            at_start = 0;
+                        } else {
+                            *end = value;
+                        }
+                        found = true;
+                    } else {
+                        printf("Can't find symbol %s\n", sym);
+                        return 0;
+                    }
+                    args++;
+                    break;
+                }
+                args++;
+            }
+            if (!found) {
+                uint16_t value;
+                if (find_symbol(sym, &value)) {
+                    if (at_start) {
+                        *start = value;
+                        at_start = 0;
+                        *end = value + default_size;
+                    } else {
+                        *end = value;
+                    }
+                } else {
+                    printf("Can't find symbol %s\n", sym);
+                    return 0;
+                }
+            }
         } else {
             printf("Invalid character in disassembly range: %c\n", ch);
             return 0;
@@ -826,6 +851,8 @@ int parse_addr_range(char *args, uint16_t *start, uint16_t *end, uint16_t defaul
     }
     if (at_start) {
         *end = *start + default_size;
+    } else if (add_to_start) {
+        *end = *start + *end;
     }
     return 1;
 }
