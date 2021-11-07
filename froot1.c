@@ -989,34 +989,34 @@ void disassemble(uint16_t from, uint16_t to) {
 
         switch (addr_mode) {
             case ABS:
-                printf(" %04x\n", ram[from+1]+(ram[from+2]<<8));
+                printf(" $%04x\n", ram[from+1]+(ram[from+2]<<8));
                 break;
             case ABS_X:
-                printf(" %04x,X\n", ram[from+1]+(ram[from+2]<<8));
+                printf(" $%04x,X\n", ram[from+1]+(ram[from+2]<<8));
                 break;
             case ABS_Y:
-                printf(" %04x,Y\n", ram[from+1]+(ram[from+2]<<8));
+                printf(" $%04x,Y\n", ram[from+1]+(ram[from+2]<<8));
                 break;
             case ZP:
-                printf(" %02x\n", ram[from+1]);
+                printf(" $%02x\n", ram[from+1]);
                 break;
             case ZP_X:
-                printf(" %02x,X\n", ram[from+1]);
+                printf(" $%02x,X\n", ram[from+1]);
                 break;
             case IND:
-                printf(" (%02x)\n", ram[from+1]);
+                printf(" ($%02x)\n", ram[from+1]);
                 break;
             case IND_X:
-                printf(" (%02x,X)\n", ram[from+1]);
+                printf(" ($%02x,X)\n", ram[from+1]);
                 break;
             case IND_Y:
-                printf(" (%02x),Y\n", ram[from+1]);
+                printf(" ($%02x),Y\n", ram[from+1]);
                 break;
             case IMM:
-                printf(" #%02x\n", ram[from+1]);
+                printf(" #$%02x\n", ram[from+1]);
                 break;
             case REL:
-                printf(" %04x\n", from+2+(char)ram[from+1]);
+                printf(" $%04x\n", from+2+(char)ram[from+1]);
                 break;
             case NONE:
                 printf("\n");
