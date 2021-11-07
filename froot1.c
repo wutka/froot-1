@@ -26,6 +26,8 @@ extern volatile uint8_t a, x, y, sp, status;
 extern volatile uint32_t clockticks6502;
 
 int load_mem(char *filename, bool read_only);
+int load_syms(char *filename);
+void make_sym_table();
 int kbhit(bool);
 void reset_term();
 long current_time_millis();
@@ -56,6 +58,21 @@ bool send_ready;
 bool debugging = false;
 bool debug_run_to_breakpoint = false;
 uint16_t temp_breakpoint = 0;
+
+struct sym {
+    char *name;
+    uint16_t value;
+};
+
+struct sym_node {
+    struct sym *sym;
+    struct sym_node *next;
+};
+
+struct sym_node *sym_list_head = NULL;
+
+int sym_table_size = 0;
+struct sym **sym_table = NULL;
 
 int main(int argc, char *argv[]) {
 
@@ -172,6 +189,29 @@ int main(int argc, char *argv[]) {
                 if (!*char_pos) break;
             }
             i++;
+        } else if (!strcmp(argv[i], "-sym")) {
+            if (i >= argc-1) {
+                printf("Must specify at least one filename after -sym\n");
+                exit(1);
+            }
+            char *start = argv[i+1];
+            for (;;) {
+                char *char_pos = strchr(start, ',');
+                if (!char_pos) {
+                    if (!load_syms(start)) {
+                        exit(1);
+                    }
+                    break;
+                }
+                *char_pos = 0;
+                if (!load_syms(start)) {
+                    exit(1);
+                }
+                start = char_pos+1;
+                char_pos++;
+                if (!*char_pos) break;
+            }
+            i++;
         } else if (!strcmp(argv[i], "-d")) {
             debugging = true;
         } else if (!strcmp(argv[i], "-baud")) {
@@ -188,6 +228,11 @@ int main(int argc, char *argv[]) {
                 exit(1);
             }
         }
+    }
+
+    if (sym_table_size > 0) {
+        make_sym_table();
+        printf("Symbol table has %d entries\n", sym_table_size);
     }
 
     if (cassette_enabled) {
@@ -396,6 +441,105 @@ int load_mem(char *filename, bool read_only) {
     fclose(in);
     return 1;
 }
+
+int load_syms(char *filename) {
+    FILE *in;
+
+    printf("Loading symbols from %s\n", filename);
+    // Open the input file
+    if ((in = fopen(filename, "r")) == NULL) {
+        snprintf(line, sizeof(line)-1, "/usr/local/share/froot-1/%s", filename);
+        if ((in = fopen(line, "r")) == NULL) {
+            fprintf(stderr, "Can't open file %s\n", filename);
+            return 0;
+        }
+    }
+
+    // Read it line-by line
+    while (fgets(line, sizeof(line), in)) {
+        if (strlen(line) == 0) continue;
+        if (strncmp(line, "sym", 3)) continue;
+        
+        char *name_start = strstr(line, "name=\"");
+        if (!name_start) continue;
+        char *val_start = strstr(line, "val=0x");
+        if (!val_start) continue;
+
+        char *name = name_start + 6;
+        char *quote_pos = strchr(name, '"');
+        if (quote_pos == NULL) continue;
+        *quote_pos = 0;
+
+        char *val_str = val_start + 6;
+        char *comma_pos = strchr(val_str, ',');
+        if (comma_pos == NULL) continue;
+        *comma_pos = 0;
+
+        int val;
+        if (sscanf(val_str, "%x", &val) == 0) continue;
+        struct sym *new_sym = (struct sym *) malloc(sizeof(struct sym));
+        new_sym->name = malloc(strlen(name)+1);
+        strcpy(new_sym->name, name);
+        new_sym->value = val;
+
+        struct sym_node *curr = sym_list_head;
+        struct sym_node *prev = NULL;
+
+        struct sym_node *new_node = (struct sym_node *) malloc(sizeof(struct sym_node));
+        new_node->sym = new_sym;
+        new_node->next = NULL;
+
+        sym_table_size++;
+
+        if (!curr) {
+            curr =new_node;
+        } else {
+            while (curr && (strcmp(name, curr->sym->name) > 0)) {
+                prev = curr;
+                curr = curr->next;
+            }
+            new_node->next = curr;
+            if (prev == NULL) {
+                sym_list_head = new_node;
+            } else {
+                prev->next = new_node;
+            }
+        }
+    }
+    fclose(in);
+    return 1;
+}
+
+void make_sym_table() {
+    sym_table = (struct sym **)malloc(sym_table_size * sizeof(struct sym *));
+    int pos = 0;
+    struct sym_node *curr = sym_list_head;
+    while (curr) {
+        sym_table[pos] = curr->sym;
+        pos++;
+        curr = curr->next;
+    }
+}
+
+int find_symbol(char *symbol, uint16_t *value) {
+    int first, last, mid;
+    first = 0;
+    last = sym_table_size;
+    while (first <= last) {
+        mid = (first + last) / 2;
+        int res = strcmp(symbol, sym_table[mid]->name);
+        if (res == 0) {
+            *value = sym_table[mid]->value;
+            return 1;
+        } else if (res < 0) {
+            last = mid;
+        } else {
+            first = mid;
+        }
+    }
+    return 0;
+}
+
 
 void begin_write_cassette() {
     // If we are already writing, don't prompt for another file
