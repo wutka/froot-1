@@ -22,7 +22,7 @@ extern void exec6502(uint32_t);
 extern void step6502();
 extern void nmi6502();
 extern volatile uint16_t pc;
-extern volatile uint8_t a, x, y, status;
+extern volatile uint8_t a, x, y, sp, status;
 extern volatile uint32_t clockticks6502;
 
 int load_mem(char *filename, bool read_only);
@@ -705,8 +705,8 @@ void debug_step() {
     status_str[6] = status&0x02 ? 'Z' : ' ';
     status_str[7] = status&0x01 ? 'C' : ' ';
 
-    printf("pc = %04x  a=%02x  x=%02x  y=%02x  status=%s\n",
-            pc, a, x, y, status_str);
+    printf("pc = %04x  a=%02x  x=%02x  y=%02x  sp=%02x  status=%s\n",
+            pc, a, x, y, sp, status_str);
     disassemble(pc, pc+1);
 
     if (pc == temp_breakpoint) {
