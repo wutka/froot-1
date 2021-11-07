@@ -814,9 +814,11 @@ int parse_addr_range(char *args, uint16_t *start, uint16_t *end, uint16_t defaul
                     uint16_t value;
                     if (find_symbol(sym, &value)) {
                         if (at_start) {
+                            printf("Start = %04x\n", value);
                             *start = value;
                             at_start = 0;
                         } else {
+                            printf("End = %04x\n", value);
                             *end = value;
                         }
                         found = true;
@@ -824,6 +826,10 @@ int parse_addr_range(char *args, uint16_t *start, uint16_t *end, uint16_t defaul
                         printf("Can't find symbol %s\n", sym);
                         return 0;
                     }
+                    if (ch == '+') {
+                        add_to_start = true;
+                    }
+                    at_start = 0;
                     args++;
                     break;
                 }
@@ -833,10 +839,11 @@ int parse_addr_range(char *args, uint16_t *start, uint16_t *end, uint16_t defaul
                 uint16_t value;
                 if (find_symbol(sym, &value)) {
                     if (at_start) {
+                        printf("Start = %04x\n", value);
                         *start = value;
-                        at_start = 0;
                         *end = value + default_size;
                     } else {
+                        printf("End = %04x\n", value);
                         *end = value;
                     }
                 } else {
@@ -852,6 +859,7 @@ int parse_addr_range(char *args, uint16_t *start, uint16_t *end, uint16_t defaul
     if (at_start) {
         *end = *start + default_size;
     } else if (add_to_start) {
+        printf("Adding to start\n");
         *end = *start + *end;
     }
     return 1;
