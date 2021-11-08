@@ -705,12 +705,12 @@ static void sbc() {
     if (status & FLAG_DECIMAL) {
         clearcarry();
         
-        a -= 0x66;
-        if ((a & 0x0F) > 0x09) {
-            a += 0x06;
+        result -= 0x66;
+        if ((result & 0x0F) > 0x09) {
+            result += 0x06;
         }
-        if ((a & 0xF0) > 0x90) {
-            a += 0x60;
+        if ((result & 0xF0) > 0x90) {
+            result += 0x60;
             setcarry();
         }
         
