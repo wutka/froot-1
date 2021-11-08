@@ -741,7 +741,7 @@ uint8_t read6502(uint16_t address) {
 /* Callback from the fake6502 library, handle writes to RAM or the RIOT chips */
 void write6502(uint16_t address, uint8_t value) {
     if ((address & 0xff1f) == 0xd012) {
-        if (reading_file || send_ready) {
+        if ((reading_file || send_ready) && (value & 0x80)) {
             char ch = value & 0x7f;
             if (ch == 13) {
                 putchar(10);
@@ -943,16 +943,26 @@ void debug_step() {
                 breakpoint[pc] = true;
                 printf("Set breakpoint at %04x\n", pc);
             } else {
-                unsigned int bp_addr;
-                if (sscanf(args, "%x", &bp_addr) == 1) {
-                    if (bp_addr >= 0x10000) {
-                        printf("Breakpoint %0x out of range.\n", bp_addr);
+                if (args[0] == '@') {
+                    uint16_t bp_addr;
+                    if (!find_symbol(&args[1], &bp_addr)) {
+                        printf("Can't find symbol %s\n", &args[1]);
                     } else {
                         breakpoint[bp_addr] = true;
                         printf("Set breakpoint at %04x\n", bp_addr);
                     }
                 } else {
-                    printf("Can't parse breakpoint addr %s\n", args);
+                    unsigned int bp_addr;
+                    if (sscanf(args, "%x", &bp_addr) == 1) {
+                        if (bp_addr >= 0x10000) {
+                            printf("Breakpoint %0x out of range.\n", bp_addr);
+                        } else {
+                            breakpoint[bp_addr] = true;
+                            printf("Set breakpoint at %04x\n", bp_addr);
+                        }
+                    } else {
+                        printf("Can't parse breakpoint addr %s\n", args);
+                    }
                 }
             }
         } else if (!strcmp(input_line, "lb")) {
@@ -975,16 +985,26 @@ void debug_step() {
                     printf("Breakpoint cleared at %04x\n", pc);
                 }
             } else {
-                unsigned int bp_addr;
-                if (sscanf(args, "%x", &bp_addr) == 1) {
-                    if (bp_addr > 0x10000) {
-                        printf("Breakpoint %0x out of range.\n", bp_addr);
+                if (args[0] == '@') {
+                    uint16_t bp_addr;
+                    if (!find_symbol(&args[1], &bp_addr)) {
+                        printf("Can't find symbol %s\n", &args[1]);
                     } else {
                         breakpoint[bp_addr] = false;
                         printf("Cleared breakpoint at %04x\n", bp_addr);
                     }
                 } else {
-                    printf("Can't parse breakpoint addr %s\n", args);
+                    unsigned int bp_addr;
+                    if (sscanf(args, "%x", &bp_addr) == 1) {
+                        if (bp_addr > 0x10000) {
+                            printf("Breakpoint %0x out of range.\n", bp_addr);
+                        } else {
+                            breakpoint[bp_addr] = false;
+                            printf("Cleared breakpoint at %04x\n", bp_addr);
+                        }
+                    } else {
+                        printf("Can't parse breakpoint addr %s\n", args);
+                    }
                 }
             }
         } else if (!strcmp(input_line, "ca")) {
@@ -1044,10 +1064,11 @@ void debug_step() {
                     printf("  ");
                 }
                 printf("%02x ", ram[start_addr]);
-                if (ram[start_addr] < 160) {
+                char ch = ram[start_addr] & 0x7f;
+                if (ch < 32) {
                     ascii_rep[bytes_printed] = '.';
                 } else {
-                    ascii_rep[bytes_printed] = ram[start_addr]-0x80;
+                    ascii_rep[bytes_printed] = ch;
                 }
                 bytes_printed++;
                 ascii_rep[bytes_printed] = 0;
