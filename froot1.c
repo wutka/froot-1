@@ -59,6 +59,9 @@ bool debugging = false;
 bool debug_run_to_breakpoint = false;
 uint16_t temp_breakpoint = 0;
 
+int columns = 0;
+int curr_col = 0;
+
 struct sym_node {
     char *name;
     uint16_t value;
@@ -221,6 +224,21 @@ int main(int argc, char *argv[]) {
                 printf("Baud rate cannot be negative\n");
                 exit(1);
             }
+            i++;
+        } else if (!strcmp(argv[i], "-cols")) {
+            if (i >= argc-1) {
+                printf("Must specify a column count after -cols\n");
+                exit(1);
+            }
+            if (sscanf(argv[i+1], "%d", &columns) == 0) {
+                printf("Unable to parse column count %s\n",argv[i+1]);
+                exit(1);
+            }
+            if (columns < 0) {
+                printf("Column count cannot be negative\n");
+                exit(1);
+            }
+            i++;
         }
     }
 
@@ -743,10 +761,17 @@ void write6502(uint16_t address, uint8_t value) {
     if ((address & 0xff1f) == 0xd012) {
         if ((reading_file || send_ready) && (value & 0x80)) {
             char ch = value & 0x7f;
-            if (ch == 13) {
+            if (columns > 0 && (ch == 10 || ch == 13)) {
+                curr_col = 0;
+            }
+            if ((ch == 13) || (ch == 10)) {
                 putchar(10);
             } else {
                 putchar(ch);
+                if ((columns > 0) && (++curr_col >= columns)) {
+                    putchar(10);
+                    curr_col = 0;
+                }
             }
             fflush(stdout);
 

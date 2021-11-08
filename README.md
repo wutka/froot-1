@@ -37,6 +37,13 @@ To drop immediately into the debugger, use `-d`.
 
 You can simulate a baud rate with `-baud nnn`. A baud rate of 0
 means that there is no baud rate limitation, which is the default.
+
+Since the original Apple-1 monitor only had 40 characters of output,
+you may want to simulate a screen width of 40. Use `-cols nnn` to
+set the column width (e.g. `-cols 40` for the original width).
+This is helpful, for example, to run the Smarty Kit program that
+prints Steve Wozniak's face on the screen.
+
 ## Woz Monitor
 
 The original Woz monitor program is loaded starting at location FF00
