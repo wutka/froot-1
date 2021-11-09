@@ -239,6 +239,8 @@ int main(int argc, char *argv[]) {
                 exit(1);
             }
             i++;
+        } else {
+            printf("Unknown argument: %s\n", argv[i]);
         }
     }
 
