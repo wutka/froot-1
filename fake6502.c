@@ -693,7 +693,7 @@ static void rts() {
 
 static void sbc() {
     penaltyop = 1;
-    value = getvalue() ^ 0x00FF;
+    value = (getvalue() ^ 0x00FF) + 1;
     result = (uint16_t)a + value + (uint16_t)(status & FLAG_CARRY);
    
     carrycalc(result);
