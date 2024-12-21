@@ -9,6 +9,11 @@
 #include <ctype.h>
 #include <unistd.h>
 
+#define LF  0x0A
+#define CR  0x0D
+#define SP  0x20
+#define DEL 0x7F
+
 uint8_t ram[65536];
 bool rom[65536];
 bool breakpoint[65536];
@@ -763,15 +768,15 @@ void write6502(uint16_t address, uint8_t value) {
     if ((address & 0xff1f) == 0xd012) {
         if ((reading_file || send_ready) && (value & 0x80)) {
             char ch = value & 0x7f;
-            if (columns > 0 && (ch == 10 || ch == 13)) {
+            if (ch == CR) {
+                putchar(LF);
                 curr_col = 0;
-            }
-            if ((ch == 13) || (ch == 10)) {
-                putchar(10);
-            } else {
+            } else if (ch >= SP && ch <= DEL) {
+                if (ch > '_')
+                    ch -= 'a' - 'A';
                 putchar(ch);
                 if ((columns > 0) && (++curr_col >= columns)) {
-                    putchar(10);
+                    putchar(LF);
                     curr_col = 0;
                 }
             }
