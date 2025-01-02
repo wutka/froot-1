@@ -458,10 +458,8 @@ int load_mem(char *filename, bool read_only) {
 
         // Write the row into ram and update the rom flag appropriately
         for (int i=0; i < byte_count; i++) {
-            if (!rom[addr+i]) {
-                ram[addr+i] = row[i];
-                rom[addr+i] = read_only;
-            }
+            ram[addr+i] = row[i];
+            rom[addr+i] = read_only;
         }
     }
     fclose(in);
