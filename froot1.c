@@ -350,10 +350,22 @@ char line[1024];
 int load_mem(char *filename, bool read_only) {
     FILE *in;
 
+    const char* const DATADIRS[] = {
+        "/usr/local/share/froot-1",
+        "/usr/share/froot-1"
+    };
+    const int DATADIRS_COUNT = 2;
+
     // Open the input file
     if ((in = fopen(filename, "r")) == NULL) {
-        snprintf(line, sizeof(line)-1, "/usr/local/share/froot-1/%s", filename);
-        if ((in = fopen(line, "r")) == NULL) {
+        for (int i=0; i<DATADIRS_COUNT; i++) {
+            snprintf(line, sizeof(line)-1, "%s/%s", DATADIRS[i], filename);
+            if ((in = fopen(line, "r")) != NULL) {
+                break;
+            }
+        }
+
+        if (in == NULL) {
             fprintf(stderr, "Can't open file %s\n", filename);
             return 0;
         }
